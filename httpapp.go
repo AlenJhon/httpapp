@@ -10,7 +10,7 @@ import (
 	bm "github.com/go-kratos/kratos/pkg/net/http/blademaster"
 )
 
-type AppHttp struct {
+type HttpApp struct {
 	Name   string
 	Engine *bm.Engine //http server
 	//cfg     bm.ServerConfig
@@ -25,52 +25,61 @@ type AppHttp struct {
 //	ReadTimeout  xtime.Duration `dsn:"query.readTimeout"`
 //	WriteTimeout xtime.Duration `dsn:"query.writeTimeout"`
 //}
-type AppHttpCfg bm.ServerConfig
-type AppHttpRouterGroup bm.RouterGroup //
-type HandlerFunc bm.HandlerFunc        //type HandlerFunc func(*Context)
+type Cfg = bm.ServerConfig
+type RouterGroup = bm.RouterGroup //
+type HandlerFunc = bm.HandlerFunc //type HandlerFunc func(*Context)
 
-var svc AppHttp
+var svc HttpApp
 
 //New new a http server
-func New(name string, conf *AppHttpCfg) (s *AppHttp, err error) {
-	svc.Name = name
-	svc.Engine = bm.DefaultServer(conf)
+func New(name string, conf *Cfg) (s *HttpApp, err error) {
+	if name == "" {
+		svc.Name = "demo"
+	} else {
+		svc.Name = name
+	}
+	if conf != nil {
+		svc.Engine = bm.DefaultServer(conf)
+	} else {
+		var conf Cfg
+		conf.Network = "tcp"
+		conf.Addr = "0.0.0.0:8000"
+		conf.Timeout = 1
+		svc.Engine = bm.DefaultServer(&conf)
+	}
 
-	initRouter(engine)
+	initRouter(svc.Engine)
 	return &svc, nil
 }
 
-func (s *AppHttp) Run() (err error) {
-	err = s.Engine.Start()
+func (svc *HttpApp) Run() (err error) {
+	err = svc.Engine.Start()
 	if err != nil {
 		return
 	}
-	log.Info(s.Name, " start success .")
-	s.waitNotify(func() {})
+	log.Info("%s start success .", svc.Name)
+	svc.waitNotify(func() {})
 	return nil
 }
 
-//register router group
-func (s *AppHttp) RouterGroup(relativePath string, handlers ...HandlerFunc) (g *AppHttpRouterGroup) {
-	g = s.Engine.Group(relativePath, handlers)
-	return
+func (svc *HttpApp) RouterGroupGet(relativeRouterGroupPath string, relativePath string, handlers ...HandlerFunc) {
+	rg := svc.Engine.Group(relativeRouterGroupPath)
+	rg.GET(relativePath, handlers...)
 }
-func (rg *AppHttpRouterGroup) Get(relativePath string, handlers ...HandlerFunc) {
-	rg.Get(relativePath, handlers)
-}
-func (rg *AppHttpRouterGroup) Post(relativePath string, handlers ...HandlerFunc) {
-	rg.Post(relativePath, handlers)
+func (svc *HttpApp) RouterGroupPost(relativeRouterGroupPath string, relativePath string, handlers ...HandlerFunc) {
+	rg := svc.Engine.Group(relativeRouterGroupPath)
+	rg.POST(relativePath, handlers...)
 }
 
-func (s *AppHttp) Get(relativePath string, handlers ...HandlerFunc) {
-	s.Engine.Get(relativePath, handlers)
+func (svc *HttpApp) Get(relativePath string, handlers ...HandlerFunc) {
+	svc.Engine.GET(relativePath, handlers...)
 }
-func (s *AppHttp) Post(relativePath string, handlers ...HandlerFunc) {
-	s.Engine.Post(relativePath, handlers)
+func (svc *HttpApp) Post(relativePath string, handlers ...HandlerFunc) {
+	svc.Engine.POST(relativePath, handlers...)
 }
 
 func initRouter(e *bm.Engine) {
-	e.Get("/", howToStart)
+	e.GET("/", howToStart)
 	//g := e.Group("/demo")
 	//{
 	//	g.GET("/start", howToStart)
@@ -82,7 +91,7 @@ func howToStart(c *bm.Context) {
 	c.JSON(" hello webs demo.", nil)
 }
 
-func (s *AppHttp) waitNotify(closeFunc func()) {
+func (svc *HttpApp) waitNotify(closeFunc func()) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
 	for {
@@ -92,7 +101,7 @@ func (s *AppHttp) waitNotify(closeFunc func()) {
 		switch s {
 		case syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
 			closeFunc()
-			log.Info(s.Name, " exit .")
+			log.Info("%s exit .", svc.Name)
 			time.Sleep(time.Second)
 			return
 		case syscall.SIGHUP:
